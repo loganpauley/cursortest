@@ -24,17 +24,26 @@ async function initAudio() {
     if (audioContext) return; // Don't initialize if already exists
     
     try {
+        // Create audio context with user interaction
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        await audioContext.resume(); // Ensure it's running
+        
+        // Create media element source
         source = audioContext.createMediaElementSource(backgroundMusic);
         
         // Create analyzer node
         analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = 256; // Increased for better frequency resolution
+        analyzer.fftSize = 256;
         analyzer.smoothingTimeConstant = 0.4;
         
         // Connect nodes
         source.connect(analyzer);
         source.connect(audioContext.destination);
+
+        console.log('Audio context initialized:', {
+            state: audioContext.state,
+            sampleRate: audioContext.sampleRate
+        });
 
         // Process audio data for BPM
         const bufferLength = analyzer.frequencyBinCount;
@@ -75,8 +84,6 @@ async function initAudio() {
                 // Calculate BPM based on beat count
                 if (beatCount > 0) {
                     currentBPM = Math.round(beatCount * (120 / timeSinceUpdate));
-                    
-                    // Constrain BPM to reasonable range
                     currentBPM = Math.max(60, Math.min(200, currentBPM));
                     
                     // Update display
@@ -98,9 +105,9 @@ async function initAudio() {
             }
 
             // Detect beat when bass energy is significantly above average
-            if (bassEnergy > avgEnergy * 1.2) { // 20% above average
+            if (bassEnergy > avgEnergy * 1.2 && avgEnergy > 0) {
                 const timeSinceLastBeat = now - lastBeatTime;
-                if (timeSinceLastBeat > 0.2) { // Minimum time between beats
+                if (timeSinceLastBeat > 0.2) {
                     beatCount++;
                     lastBeatTime = now;
                     
@@ -115,15 +122,8 @@ async function initAudio() {
             requestAnimationFrame(detectBPM);
         }
 
-        // Start BPM detection when music plays
-        backgroundMusic.addEventListener('play', () => {
-            console.log('Music started playing');
-            beatCount = 0;
-            lastBeatTime = audioContext.currentTime;
-            lastUpdateTime = audioContext.currentTime;
-            energyHistory = [];
-            detectBPM();
-        });
+        // Start BPM detection
+        detectBPM();
 
     } catch (error) {
         console.error('Error initializing audio:', error);
@@ -133,37 +133,43 @@ async function initAudio() {
 // Music controls
 async function toggleMusic() {
     try {
-        console.log('Toggle music clicked');
-        
+        console.log('Toggle music clicked, current state:', {
+            isPlaying: isMusicPlaying,
+            audioContext: audioContext ? audioContext.state : 'not created'
+        });
+
         // Initialize audio context on first click
         if (!audioContext) {
-            console.log('Initializing audio context');
             await initAudio();
         }
 
         if (isMusicPlaying) {
-            console.log('Pausing music');
             await backgroundMusic.pause();
             musicToggle.textContent = '🔇 Music Off';
             isMusicPlaying = false;
             bpmDisplay.textContent = 'BPM: --';
-            currentBPM = 120; // Reset to default
         } else {
-            console.log('Starting music');
-            // Resume audio context if it's suspended
-            if (audioContext && audioContext.state === 'suspended') {
-                console.log('Resuming audio context');
-                await audioContext.resume();
-            }
             try {
-                await backgroundMusic.play();
-                console.log('Music started successfully');
-                musicToggle.textContent = '🔊 Music On';
-                isMusicPlaying = true;
-                beatCount = 0;
-                lastBeatTime = audioContext.currentTime;
+                // Make sure audio context is running
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                
+                // Try to play the music
+                const playPromise = backgroundMusic.play();
+                if (playPromise !== undefined) {
+                    await playPromise;
+                    musicToggle.textContent = '🔊 Music On';
+                    isMusicPlaying = true;
+                    beatCount = 0;
+                    lastBeatTime = audioContext.currentTime;
+                    console.log('Music started successfully');
+                }
             } catch (playError) {
                 console.error('Error playing music:', playError);
+                // Reset state if play fails
+                isMusicPlaying = false;
+                musicToggle.textContent = '🔇 Music Off';
             }
         }
     } catch (error) {
