@@ -61,9 +61,9 @@ async function initAudio() {
 
             analyzer.getByteFrequencyData(dataArray);
             
-            // Focus on low-mid frequencies (more than just bass)
+            // Focus on low-mid frequencies
             let energy = 0;
-            for (let i = 0; i < 20; i++) { // Using more frequency bins
+            for (let i = 0; i < 20; i++) {
                 energy += dataArray[i];
             }
             energy = energy / 20;
@@ -81,11 +81,11 @@ async function initAudio() {
             const now = audioContext.currentTime;
             const timeSinceUpdate = now - lastUpdateTime;
             
-            // Update BPM more frequently (every 0.25 seconds)
-            if (timeSinceUpdate >= 0.25) {
+            // Update BPM every 2 seconds
+            if (timeSinceUpdate >= 2.0) {
                 if (beatCount > 0) {
                     // Calculate instant BPM
-                    instantBPM = Math.round(beatCount * (240 / timeSinceUpdate));
+                    instantBPM = Math.round(beatCount * (30 / timeSinceUpdate));
                     
                     // Smooth the BPM changes
                     if (currentBPM === 120 && instantBPM > 0) {
@@ -105,10 +105,7 @@ async function initAudio() {
                         instantBPM,
                         currentBPM,
                         beatCount,
-                        timeSinceUpdate: timeSinceUpdate.toFixed(2),
-                        energy: energy.toFixed(2),
-                        avgEnergy: avgEnergy.toFixed(2),
-                        peakEnergy: peakEnergy.toFixed(2)
+                        timeSinceUpdate: timeSinceUpdate.toFixed(2)
                     });
                 }
                 
@@ -121,16 +118,9 @@ async function initAudio() {
             const energyThreshold = avgEnergy * 1.2;
             if (energy > energyThreshold && energy > avgEnergy) {
                 const timeSinceLastBeat = now - lastBeatTime;
-                if (timeSinceLastBeat > 0.2) { // Allow beats at up to 300 BPM
+                if (timeSinceLastBeat > 0.2) {
                     beatCount++;
                     lastBeatTime = now;
-                    
-                    console.log('Beat detected:', {
-                        energy: energy.toFixed(2),
-                        threshold: energyThreshold.toFixed(2),
-                        beatCount,
-                        timeSinceLastBeat: timeSinceLastBeat.toFixed(3)
-                    });
                 }
             }
 
@@ -219,9 +209,9 @@ function updateBallSpeed() {
     }
     
     // Scale ball speed based on BPM (120 BPM is considered "normal" speed)
-    // Use a more gradual scaling function
+    // Halve the speed multiplier
     const normalizedBPM = currentBPM / 120;
-    const speedMultiplier = Math.max(0.5, Math.min(2, Math.pow(normalizedBPM, 0.7)));
+    const speedMultiplier = Math.max(0.25, Math.min(1.0, Math.pow(normalizedBPM, 0.7) * 0.5));
     ball.speed = baseBallSpeed * speedMultiplier;
     
     // Maintain direction while updating speed
@@ -230,7 +220,7 @@ function updateBallSpeed() {
     ball.dx = ball.speed * currentDxSign;
     ball.dy = ball.speed * currentDySign;
     
-    console.log(`Current BPM: ${currentBPM}, Ball Speed: ${ball.speed.toFixed(2)}`);
+    console.log(`Current BPM: ${currentBPM}, Ball Speed: ${ball.speed.toFixed(2)} (${(speedMultiplier * 100).toFixed(1)}% of base speed)`);
 }
 
 const paddleHeight = 100;
