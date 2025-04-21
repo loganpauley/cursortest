@@ -14,14 +14,7 @@ let audioContext = null;
 let analyzer = null;
 let source = null;
 const baseBallSpeed = 5;
-let currentBPM = 69; // Known BPM of the song
-let beatCount = 0;
-let lastBeatTime = 0;
-let lastEnergy = 0;
-let peakThreshold = 0;
-let valleys = 0;
-let peaks = 0;
-let timeWindow = 0;
+const songBPM = 69; // Fixed BPM of the song
 
 // Initialize audio context and BPM analyzer
 async function initAudio() {
@@ -33,8 +26,8 @@ async function initAudio() {
         
         source = audioContext.createMediaElementSource(backgroundMusic);
         analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = 2048; // Higher resolution
-        analyzer.smoothingTimeConstant = 0.9; // Smoother analysis
+        analyzer.fftSize = 2048;
+        analyzer.smoothingTimeConstant = 0.9;
         
         source.connect(analyzer);
         source.connect(audioContext.destination);
@@ -44,76 +37,9 @@ async function initAudio() {
             sampleRate: audioContext.sampleRate
         });
 
-        const bufferLength = analyzer.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        let lastUpdateTime = audioContext.currentTime;
-        let energyHistory = [];
-        const historySize = 60; // 1 second of history at 60fps
-
-        function detectBPM() {
-            if (!isMusicPlaying) {
-                requestAnimationFrame(detectBPM);
-                return;
-            }
-
-            analyzer.getByteFrequencyData(dataArray);
-            
-            // Focus on bass frequencies (approximately 20-120Hz)
-            let energy = 0;
-            // With fftSize of 2048, each bin represents ~21.5Hz
-            // We'll look at bins 1-6 (approximately 21.5Hz-129Hz)
-            for (let i = 1; i < 6; i++) {
-                energy += dataArray[i];
-            }
-            energy = energy / 5;
-            
-            // Keep track of energy history
-            energyHistory.push(energy);
-            if (energyHistory.length > historySize) {
-                energyHistory.shift();
-                
-                // Calculate dynamic threshold
-                const sorted = [...energyHistory].sort((a, b) => a - b);
-                const median = sorted[Math.floor(sorted.length / 2)];
-                peakThreshold = median * 1.3; // 30% above median
-            }
-
-            const now = audioContext.currentTime;
-            
-            // Detect beats using zero-crossing and peak detection
-            if (energy > peakThreshold && energy > lastEnergy && timeWindow > 0.2) {
-                beatCount++;
-                timeWindow = 0;
-                
-                // Calculate instantaneous BPM
-                const timeSinceLastBeat = now - lastBeatTime;
-                if (timeSinceLastBeat > 0) {
-                    const instantBPM = Math.round(60 / timeSinceLastBeat);
-                    if (instantBPM >= 60 && instantBPM <= 200) { // Reasonable BPM range
-                        // Weighted average favoring the known BPM
-                        currentBPM = Math.round(currentBPM * 0.8 + instantBPM * 0.2);
-                        bpmDisplay.textContent = `BPM: ${currentBPM}`;
-                        updateBallSpeed();
-                        
-                        console.log('Beat detected:', {
-                            instantBPM,
-                            currentBPM,
-                            energy: Math.round(energy),
-                            threshold: Math.round(peakThreshold)
-                        });
-                    }
-                }
-                lastBeatTime = now;
-            }
-            
-            lastEnergy = energy;
-            timeWindow += 1/60; // Assuming 60fps
-
-            requestAnimationFrame(detectBPM);
-        }
-
-        detectBPM();
-
+        // Update BPM display with known value
+        bpmDisplay.textContent = `BPM: ${songBPM}`;
+        updateBallSpeed();
     } catch (error) {
         console.error('Error initializing audio:', error);
     }
@@ -127,7 +53,6 @@ async function toggleMusic() {
             audioContext: audioContext ? audioContext.state : 'not created'
         });
 
-        // Initialize audio context on first click
         if (!audioContext) {
             await initAudio();
         }
@@ -136,27 +61,21 @@ async function toggleMusic() {
             await backgroundMusic.pause();
             musicToggle.textContent = '🔇 Music Off';
             isMusicPlaying = false;
-            bpmDisplay.textContent = 'BPM: --';
         } else {
             try {
-                // Make sure audio context is running
                 if (audioContext.state === 'suspended') {
                     await audioContext.resume();
                 }
                 
-                // Try to play the music
                 const playPromise = backgroundMusic.play();
                 if (playPromise !== undefined) {
                     await playPromise;
                     musicToggle.textContent = '🔊 Music On';
                     isMusicPlaying = true;
-                    beatCount = 0;
-                    lastBeatTime = audioContext.currentTime;
                     console.log('Music started successfully');
                 }
             } catch (playError) {
                 console.error('Error playing music:', playError);
-                // Reset state if play fails
                 isMusicPlaying = false;
                 musicToggle.textContent = '🔇 Music Off';
             }
@@ -188,13 +107,8 @@ const ball = {
 };
 
 function updateBallSpeed() {
-    if (!currentBPM || currentBPM < 40) {
-        currentBPM = 120; // Default BPM if not detected
-    }
-    
     // Scale ball speed based on BPM (120 BPM is considered "normal" speed)
-    // Halve the speed multiplier
-    const normalizedBPM = currentBPM / 120;
+    const normalizedBPM = songBPM / 120;
     const speedMultiplier = Math.max(0.25, Math.min(1.0, Math.pow(normalizedBPM, 0.7) * 0.5));
     ball.speed = baseBallSpeed * speedMultiplier;
     
@@ -204,7 +118,7 @@ function updateBallSpeed() {
     ball.dx = ball.speed * currentDxSign;
     ball.dy = ball.speed * currentDySign;
     
-    console.log(`Current BPM: ${currentBPM}, Ball Speed: ${ball.speed.toFixed(2)} (${(speedMultiplier * 100).toFixed(1)}% of base speed)`);
+    console.log(`Using fixed BPM: ${songBPM}, Ball Speed: ${ball.speed.toFixed(2)} (${(speedMultiplier * 100).toFixed(1)}% of base speed)`);
 }
 
 const paddleHeight = 100;
