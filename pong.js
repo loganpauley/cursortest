@@ -11,7 +11,7 @@ let isMusicPlaying = false;
 
 // Audio context and BPM analyzer setup
 let audioContext;
-let realtimeAnalyzerNode;
+let analyzer;
 let source;
 const baseBallSpeed = 5;
 let currentBPM = 120; // Default BPM
@@ -22,31 +22,54 @@ async function initAudio() {
         audioContext = new AudioContext();
         source = audioContext.createMediaElementSource(backgroundMusic);
         
-        // Create BPM analyzer
-        realtimeAnalyzerNode = await createRealTimeBpmProcessor(audioContext, {
-            continuousAnalysis: true,
-            stabilizationTime: 10000,
-        });
-
-        // Create and connect lowpass filter
-        const lowpass = audioContext.createBiquadFilter();
-        lowpass.type = 'lowpass';
-        lowpass.frequency.value = 150;
-        lowpass.Q.value = 1;
-
+        // Create analyzer node
+        analyzer = audioContext.createAnalyser();
+        analyzer.fftSize = 2048;
+        
         // Connect nodes
-        source.connect(lowpass);
-        lowpass.connect(realtimeAnalyzerNode);
+        source.connect(analyzer);
         source.connect(audioContext.destination);
 
-        // Listen for BPM updates
-        realtimeAnalyzerNode.port.onmessage = (event) => {
-            if (event.data.message === 'BPM') {
-                currentBPM = event.data.data.bpm;
-                bpmDisplay.textContent = `BPM: ${Math.round(currentBPM)}`;
-                updateBallSpeed();
+        // Process audio data for BPM
+        const bufferLength = analyzer.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        function detectBPM() {
+            analyzer.getByteTimeDomainData(dataArray);
+            
+            // Simple peak detection
+            let peaks = 0;
+            let lastPeak = 0;
+            const threshold = 200; // Adjust this value based on your music
+            
+            for (let i = 1; i < bufferLength - 1; i++) {
+                if (dataArray[i] > threshold && 
+                    dataArray[i] > dataArray[i - 1] && 
+                    dataArray[i] > dataArray[i + 1]) {
+                    const timeSinceLastPeak = (Date.now() - lastPeak);
+                    if (timeSinceLastPeak > 200) { // Minimum 200ms between peaks
+                        peaks++;
+                        lastPeak = Date.now();
+                    }
+                }
             }
-        };
+            
+            // Calculate BPM based on peaks in the last second
+            currentBPM = peaks * 60;
+            bpmDisplay.textContent = `BPM: ${Math.round(currentBPM)}`;
+            updateBallSpeed();
+            
+            // Continue detecting BPM
+            if (isMusicPlaying) {
+                requestAnimationFrame(detectBPM);
+            }
+        }
+
+        // Start BPM detection when music plays
+        backgroundMusic.addEventListener('play', () => {
+            detectBPM();
+        });
+
     } catch (error) {
         console.error('Error initializing audio:', error);
     }
@@ -96,7 +119,7 @@ const ball = {
 
 function updateBallSpeed() {
     // Scale ball speed based on BPM (120 BPM is considered "normal" speed)
-    const speedMultiplier = currentBPM / 120;
+    const speedMultiplier = Math.max(0.5, Math.min(2, currentBPM / 120));
     ball.speed = baseBallSpeed * speedMultiplier;
     
     // Maintain direction while updating speed
