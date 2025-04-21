@@ -2,42 +2,73 @@
 const canvas = document.getElementById('pongCanvas');
 const ctx = canvas.getContext('2d');
 
-// Audio elements
+// Audio elements and context
 const backgroundMusic = document.getElementById('backgroundMusic');
 const volumeSlider = document.getElementById('volumeSlider');
 const musicToggle = document.getElementById('musicToggle');
+const bpmDisplay = document.getElementById('bpmDisplay');
 let isMusicPlaying = false;
 
-// Debug function
-function debugLog(message) {
-    console.log(`Debug: ${message}`);
+// Audio context and BPM analyzer setup
+let audioContext;
+let realtimeAnalyzerNode;
+let source;
+const baseBallSpeed = 5;
+let currentBPM = 120; // Default BPM
+
+// Initialize audio context and BPM analyzer
+async function initAudio() {
+    try {
+        audioContext = new AudioContext();
+        source = audioContext.createMediaElementSource(backgroundMusic);
+        
+        // Create BPM analyzer
+        realtimeAnalyzerNode = await createRealTimeBpmProcessor(audioContext, {
+            continuousAnalysis: true,
+            stabilizationTime: 10000,
+        });
+
+        // Create and connect lowpass filter
+        const lowpass = audioContext.createBiquadFilter();
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 150;
+        lowpass.Q.value = 1;
+
+        // Connect nodes
+        source.connect(lowpass);
+        lowpass.connect(realtimeAnalyzerNode);
+        source.connect(audioContext.destination);
+
+        // Listen for BPM updates
+        realtimeAnalyzerNode.port.onmessage = (event) => {
+            if (event.data.message === 'BPM') {
+                currentBPM = event.data.data.bpm;
+                bpmDisplay.textContent = `BPM: ${Math.round(currentBPM)}`;
+                updateBallSpeed();
+            }
+        };
+    } catch (error) {
+        console.error('Error initializing audio:', error);
+    }
 }
 
 // Music controls
-function toggleMusic() {
-    debugLog('Toggle music clicked');
-    debugLog(`Current music playing state: ${isMusicPlaying}`);
-    
+async function toggleMusic() {
+    if (!audioContext) {
+        await initAudio();
+    }
+
     if (isMusicPlaying) {
-        debugLog('Attempting to pause music');
         backgroundMusic.pause();
         musicToggle.textContent = '🔇 Music Off';
         isMusicPlaying = false;
     } else {
-        debugLog('Attempting to play music');
         try {
-            backgroundMusic.play()
-                .then(() => {
-                    debugLog('Music started successfully');
-                    musicToggle.textContent = '🔊 Music On';
-                    isMusicPlaying = true;
-                })
-                .catch(error => {
-                    debugLog(`Music play failed: ${error.message}`);
-                    isMusicPlaying = false;
-                });
+            await backgroundMusic.play();
+            musicToggle.textContent = '🔊 Music On';
+            isMusicPlaying = true;
         } catch (error) {
-            debugLog(`Error attempting to play: ${error.message}`);
+            console.error('Error playing music:', error);
         }
     }
 }
@@ -48,7 +79,6 @@ musicToggle.addEventListener('click', toggleMusic);
 // Volume control
 volumeSlider.addEventListener('input', (e) => {
     backgroundMusic.volume = e.target.value;
-    debugLog(`Volume changed to: ${e.target.value}`);
 });
 
 // Initialize volume
@@ -59,10 +89,22 @@ const ball = {
     x: canvas.width / 2,
     y: canvas.height / 2,
     radius: 10,
-    speed: 5,
-    dx: 5,
-    dy: 5
+    speed: baseBallSpeed,
+    dx: baseBallSpeed,
+    dy: baseBallSpeed
 };
+
+function updateBallSpeed() {
+    // Scale ball speed based on BPM (120 BPM is considered "normal" speed)
+    const speedMultiplier = currentBPM / 120;
+    ball.speed = baseBallSpeed * speedMultiplier;
+    
+    // Maintain direction while updating speed
+    const currentDxSign = Math.sign(ball.dx);
+    const currentDySign = Math.sign(ball.dy);
+    ball.dx = ball.speed * currentDxSign;
+    ball.dy = ball.speed * currentDySign;
+}
 
 const paddleHeight = 100;
 const paddleWidth = 10;
@@ -170,8 +212,8 @@ function moveBall() {
 function resetBall() {
     ball.x = canvas.width / 2;
     ball.y = canvas.height / 2;
-    ball.dx = -ball.dx;
-    ball.dy = Math.random() * 10 - 5;
+    ball.dx = ball.speed * (Math.random() > 0.5 ? 1 : -1);
+    ball.dy = ball.speed * (Math.random() * 2 - 1);
 }
 
 // Main game loop
