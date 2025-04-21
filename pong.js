@@ -33,8 +33,8 @@ async function initAudio() {
         
         // Create analyzer node
         analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = 256;
-        analyzer.smoothingTimeConstant = 0.4;
+        analyzer.fftSize = 512; // Increased for better frequency resolution
+        analyzer.smoothingTimeConstant = 0.8; // Smoother readings
         
         // Connect nodes
         source.connect(analyzer);
@@ -50,7 +50,8 @@ async function initAudio() {
         const dataArray = new Uint8Array(bufferLength);
         let lastUpdateTime = audioContext.currentTime;
         let energyHistory = [];
-        const historySize = 10;
+        const historySize = 30; // Larger history for better averaging
+        let instantBPM = 120;
         
         function detectBPM() {
             if (!isMusicPlaying) {
@@ -60,42 +61,54 @@ async function initAudio() {
 
             analyzer.getByteFrequencyData(dataArray);
             
-            // Focus on bass frequencies (first 6 bins)
-            let bassEnergy = 0;
-            for (let i = 0; i < 6; i++) {
-                bassEnergy += dataArray[i];
+            // Focus on low-mid frequencies (more than just bass)
+            let energy = 0;
+            for (let i = 0; i < 20; i++) { // Using more frequency bins
+                energy += dataArray[i];
             }
-            bassEnergy = bassEnergy / 6;
+            energy = energy / 20;
             
             // Keep track of energy history
-            energyHistory.push(bassEnergy);
+            energyHistory.push(energy);
             if (energyHistory.length > historySize) {
                 energyHistory.shift();
             }
             
-            // Calculate average energy
+            // Calculate average and peak energy
             const avgEnergy = energyHistory.reduce((a, b) => a + b, 0) / energyHistory.length;
+            const peakEnergy = Math.max(...energyHistory);
             
             const now = audioContext.currentTime;
             const timeSinceUpdate = now - lastUpdateTime;
             
-            // Update BPM more frequently (every 0.5 seconds)
-            if (timeSinceUpdate >= 0.5) {
-                // Calculate BPM based on beat count
+            // Update BPM more frequently (every 0.25 seconds)
+            if (timeSinceUpdate >= 0.25) {
                 if (beatCount > 0) {
-                    currentBPM = Math.round(beatCount * (120 / timeSinceUpdate));
+                    // Calculate instant BPM
+                    instantBPM = Math.round(beatCount * (240 / timeSinceUpdate));
+                    
+                    // Smooth the BPM changes
+                    if (currentBPM === 120 && instantBPM > 0) {
+                        currentBPM = instantBPM;
+                    } else {
+                        currentBPM = Math.round(currentBPM * 0.7 + instantBPM * 0.3);
+                    }
+                    
+                    // Constrain BPM to reasonable range
                     currentBPM = Math.max(60, Math.min(200, currentBPM));
                     
-                    // Update display
+                    // Always update display
                     bpmDisplay.textContent = `BPM: ${currentBPM}`;
                     updateBallSpeed();
                     
                     console.log('BPM Update:', {
+                        instantBPM,
                         currentBPM,
                         beatCount,
                         timeSinceUpdate: timeSinceUpdate.toFixed(2),
-                        bassEnergy: bassEnergy.toFixed(2),
-                        avgEnergy: avgEnergy.toFixed(2)
+                        energy: energy.toFixed(2),
+                        avgEnergy: avgEnergy.toFixed(2),
+                        peakEnergy: peakEnergy.toFixed(2)
                     });
                 }
                 
@@ -104,17 +117,19 @@ async function initAudio() {
                 lastUpdateTime = now;
             }
 
-            // Detect beat when bass energy is significantly above average
-            if (bassEnergy > avgEnergy * 1.2 && avgEnergy > 0) {
+            // Detect beat when energy is high enough and rising
+            const energyThreshold = avgEnergy * 1.2;
+            if (energy > energyThreshold && energy > avgEnergy) {
                 const timeSinceLastBeat = now - lastBeatTime;
-                if (timeSinceLastBeat > 0.2) {
+                if (timeSinceLastBeat > 0.2) { // Allow beats at up to 300 BPM
                     beatCount++;
                     lastBeatTime = now;
                     
                     console.log('Beat detected:', {
-                        bassEnergy: bassEnergy.toFixed(2),
-                        avgEnergy: avgEnergy.toFixed(2),
-                        beatCount
+                        energy: energy.toFixed(2),
+                        threshold: energyThreshold.toFixed(2),
+                        beatCount,
+                        timeSinceLastBeat: timeSinceLastBeat.toFixed(3)
                     });
                 }
             }
