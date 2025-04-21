@@ -29,8 +29,8 @@ async function initAudio() {
         
         // Create analyzer node
         analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = 32; // Smaller FFT for more frequent updates
-        analyzer.smoothingTimeConstant = 0.2; // More responsive
+        analyzer.fftSize = 256; // Increased for better frequency resolution
+        analyzer.smoothingTimeConstant = 0.4;
         
         // Connect nodes
         source.connect(analyzer);
@@ -40,6 +40,8 @@ async function initAudio() {
         const bufferLength = analyzer.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         let lastUpdateTime = audioContext.currentTime;
+        let energyHistory = [];
+        const historySize = 10;
         
         function detectBPM() {
             if (!isMusicPlaying) {
@@ -49,49 +51,63 @@ async function initAudio() {
 
             analyzer.getByteFrequencyData(dataArray);
             
-            // Focus on bass frequencies (first 4 bins)
+            // Focus on bass frequencies (first 6 bins)
             let bassEnergy = 0;
-            for (let i = 0; i < 4; i++) {
+            for (let i = 0; i < 6; i++) {
                 bassEnergy += dataArray[i];
             }
-            bassEnergy = bassEnergy / 4;
-
+            bassEnergy = bassEnergy / 6;
+            
+            // Keep track of energy history
+            energyHistory.push(bassEnergy);
+            if (energyHistory.length > historySize) {
+                energyHistory.shift();
+            }
+            
+            // Calculate average energy
+            const avgEnergy = energyHistory.reduce((a, b) => a + b, 0) / energyHistory.length;
+            
             const now = audioContext.currentTime;
             const timeSinceUpdate = now - lastUpdateTime;
             
-            // Update BPM every second
-            if (timeSinceUpdate >= 1) {
+            // Update BPM more frequently (every 0.5 seconds)
+            if (timeSinceUpdate >= 0.5) {
                 // Calculate BPM based on beat count
-                currentBPM = Math.round(beatCount * (60 / timeSinceUpdate));
-                
-                // Constrain BPM to reasonable range
-                currentBPM = Math.max(60, Math.min(200, currentBPM));
-                
-                // Update display
-                bpmDisplay.textContent = `BPM: ${currentBPM}`;
-                updateBallSpeed();
+                if (beatCount > 0) {
+                    currentBPM = Math.round(beatCount * (120 / timeSinceUpdate));
+                    
+                    // Constrain BPM to reasonable range
+                    currentBPM = Math.max(60, Math.min(200, currentBPM));
+                    
+                    // Update display
+                    bpmDisplay.textContent = `BPM: ${currentBPM}`;
+                    updateBallSpeed();
+                    
+                    console.log('BPM Update:', {
+                        currentBPM,
+                        beatCount,
+                        timeSinceUpdate: timeSinceUpdate.toFixed(2),
+                        bassEnergy: bassEnergy.toFixed(2),
+                        avgEnergy: avgEnergy.toFixed(2)
+                    });
+                }
                 
                 // Reset for next measurement
                 beatCount = 0;
                 lastUpdateTime = now;
-                
-                console.log('BPM Update:', {
-                    currentBPM,
-                    bassEnergy: bassEnergy.toFixed(2)
-                });
             }
 
-            // Detect beat when bass energy is high
-            if (bassEnergy > 150) { // Lower threshold for more sensitivity
+            // Detect beat when bass energy is significantly above average
+            if (bassEnergy > avgEnergy * 1.2) { // 20% above average
                 const timeSinceLastBeat = now - lastBeatTime;
-                if (timeSinceLastBeat > 0.2) { // Minimum time between beats (300ms)
+                if (timeSinceLastBeat > 0.2) { // Minimum time between beats
                     beatCount++;
                     lastBeatTime = now;
                     
                     console.log('Beat detected:', {
                         bassEnergy: bassEnergy.toFixed(2),
-                        beatCount,
-                        currentBPM
+                        avgEnergy: avgEnergy.toFixed(2),
+                        beatCount
                     });
                 }
             }
@@ -105,6 +121,7 @@ async function initAudio() {
             beatCount = 0;
             lastBeatTime = audioContext.currentTime;
             lastUpdateTime = audioContext.currentTime;
+            energyHistory = [];
             detectBPM();
         });
 
@@ -116,27 +133,38 @@ async function initAudio() {
 // Music controls
 async function toggleMusic() {
     try {
+        console.log('Toggle music clicked');
+        
         // Initialize audio context on first click
         if (!audioContext) {
+            console.log('Initializing audio context');
             await initAudio();
         }
 
         if (isMusicPlaying) {
+            console.log('Pausing music');
             await backgroundMusic.pause();
             musicToggle.textContent = '🔇 Music Off';
             isMusicPlaying = false;
             bpmDisplay.textContent = 'BPM: --';
             currentBPM = 120; // Reset to default
         } else {
+            console.log('Starting music');
             // Resume audio context if it's suspended
             if (audioContext && audioContext.state === 'suspended') {
+                console.log('Resuming audio context');
                 await audioContext.resume();
             }
-            await backgroundMusic.play();
-            musicToggle.textContent = '🔊 Music On';
-            isMusicPlaying = true;
-            beatCount = 0;
-            lastBeatTime = audioContext.currentTime;
+            try {
+                await backgroundMusic.play();
+                console.log('Music started successfully');
+                musicToggle.textContent = '🔊 Music On';
+                isMusicPlaying = true;
+                beatCount = 0;
+                lastBeatTime = audioContext.currentTime;
+            } catch (playError) {
+                console.error('Error playing music:', playError);
+            }
         }
     } catch (error) {
         console.error('Error toggling music:', error);
