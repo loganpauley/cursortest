@@ -15,6 +15,7 @@ let analyzer = null;
 let source = null;
 const baseBallSpeed = 5;
 let currentBPM = 120; // Default BPM
+let peakTimes = []; // Store peak times for BPM calculation
 
 // Initialize audio context and BPM analyzer
 async function initAudio() {
@@ -26,8 +27,8 @@ async function initAudio() {
         
         // Create analyzer node
         analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = 2048;
-        analyzer.smoothingTimeConstant = 0.85;
+        analyzer.fftSize = 512; // Smaller FFT size for better temporal resolution
+        analyzer.smoothingTimeConstant = 0.7;
         
         // Connect nodes
         source.connect(analyzer);
@@ -36,50 +37,66 @@ async function initAudio() {
         // Process audio data for BPM
         const bufferLength = analyzer.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
-        let lastUpdate = Date.now();
-        let peakCount = 0;
+        let lastPeakTime = 0;
+        let energyThreshold = 0;
+        let lastEnergy = 0;
         
         function detectBPM() {
+            if (!isMusicPlaying) return;
+            
             analyzer.getByteFrequencyData(dataArray);
             
-            // Simple peak detection
-            let sum = 0;
-            for (let i = 0; i < bufferLength; i++) {
-                sum += dataArray[i];
+            // Calculate energy in the frequency range most relevant to beats (typically bass)
+            let energy = 0;
+            for (let i = 0; i < 40; i++) { // Focus on lower frequencies
+                energy += dataArray[i];
             }
-            const average = sum / bufferLength;
-            
-            // Detect peak if average is above threshold
-            if (average > 100) {  // Adjust threshold as needed
-                const now = Date.now();
-                if (now - lastUpdate > 200) { // Minimum time between peaks
-                    peakCount++;
-                    lastUpdate = now;
+            energy = energy / 40;
+
+            // Dynamic threshold
+            energyThreshold = energyThreshold * 0.95 + energy * 0.05;
+
+            // Detect beats using energy difference
+            const now = audioContext.currentTime;
+            if (energy > energyThreshold && energy > lastEnergy && now - lastPeakTime > 0.2) {
+                peakTimes.push(now);
+                lastPeakTime = now;
+
+                // Keep only the last 4 seconds of peaks
+                const fourSecondsAgo = now - 4;
+                peakTimes = peakTimes.filter(time => time > fourSecondsAgo);
+
+                // Calculate BPM
+                if (peakTimes.length > 2) {
+                    const intervals = [];
+                    for (let i = 1; i < peakTimes.length; i++) {
+                        intervals.push(peakTimes[i] - peakTimes[i - 1]);
+                    }
+
+                    // Calculate average interval
+                    const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+                    if (avgInterval > 0) {
+                        currentBPM = Math.round(60 / avgInterval);
+                        
+                        // Constrain BPM to reasonable range (40-200 BPM)
+                        currentBPM = Math.max(40, Math.min(200, currentBPM));
+                        
+                        // Update display and ball speed
+                        bpmDisplay.textContent = `BPM: ${currentBPM}`;
+                        updateBallSpeed();
+                    }
                 }
             }
             
-            // Update BPM every second
-            const timeSinceStart = (Date.now() - lastUpdate) / 1000;
-            if (timeSinceStart >= 1) {
-                currentBPM = Math.round(peakCount * (60 / timeSinceStart));
-                peakCount = 0;
-                lastUpdate = Date.now();
-                
-                // Update display and ball speed
-                bpmDisplay.textContent = `BPM: ${currentBPM}`;
-                updateBallSpeed();
-            }
-            
-            // Continue detecting BPM
-            if (isMusicPlaying) {
-                requestAnimationFrame(detectBPM);
-            }
+            lastEnergy = energy;
+            requestAnimationFrame(detectBPM);
         }
 
         // Start BPM detection when music plays
         backgroundMusic.addEventListener('play', () => {
-            lastUpdate = Date.now();
-            peakCount = 0;
+            peakTimes = [];
+            lastPeakTime = audioContext.currentTime;
+            energyThreshold = 0;
             detectBPM();
         });
 
@@ -136,12 +153,14 @@ const ball = {
 };
 
 function updateBallSpeed() {
-    if (!currentBPM || currentBPM < 1) {
+    if (!currentBPM || currentBPM < 40) {
         currentBPM = 120; // Default BPM if not detected
     }
     
     // Scale ball speed based on BPM (120 BPM is considered "normal" speed)
-    const speedMultiplier = Math.max(0.5, Math.min(2, currentBPM / 120));
+    // Use a more gradual scaling function
+    const normalizedBPM = currentBPM / 120;
+    const speedMultiplier = Math.max(0.5, Math.min(2, Math.pow(normalizedBPM, 0.7)));
     ball.speed = baseBallSpeed * speedMultiplier;
     
     // Maintain direction while updating speed
@@ -150,7 +169,7 @@ function updateBallSpeed() {
     ball.dx = ball.speed * currentDxSign;
     ball.dy = ball.speed * currentDySign;
     
-    console.log(`Current BPM: ${currentBPM}, Ball Speed: ${ball.speed}`);
+    console.log(`Current BPM: ${currentBPM}, Ball Speed: ${ball.speed.toFixed(2)}`);
 }
 
 const paddleHeight = 100;
