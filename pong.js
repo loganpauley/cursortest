@@ -14,8 +14,19 @@ function toggleMusic() {
         backgroundMusic.pause();
         musicToggle.innerHTML = '🔇 Music Off';
     } else {
-        backgroundMusic.play().catch(e => console.log('Audio play failed:', e));
-        musicToggle.innerHTML = '🔊 Music On';
+        // Create a new promise to handle the play attempt
+        const playAttempt = backgroundMusic.play();
+        if (playAttempt !== undefined) {
+            playAttempt
+                .then(() => {
+                    musicToggle.innerHTML = '🔊 Music On';
+                    isMusicPlaying = true;
+                })
+                .catch(error => {
+                    console.log("Play failed:", error);
+                    isMusicPlaying = false;
+                });
+        }
     }
     isMusicPlaying = !isMusicPlaying;
 }
@@ -24,6 +35,9 @@ function toggleMusic() {
 volumeSlider.addEventListener('input', (e) => {
     backgroundMusic.volume = e.target.value;
 });
+
+// Initialize volume
+backgroundMusic.volume = volumeSlider.value;
 
 // Game objects
 const ball = {
