@@ -16,10 +16,38 @@
         canvas {
             border: 2px solid white;
         }
+        #musicControls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            background: #333;
+            color: white;
+            border: 1px solid white;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #444;
+        }
     </style>
 </head>
 <body>
+    <div id="musicControls">
+        <button onclick="toggleMusic()" id="musicToggle">🔇 Music Off</button>
+        <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5">
+    </div>
     <canvas id="pongCanvas" width="800" height="400"></canvas>
+    <audio id="backgroundMusic" loop>
+        <source src="music.wav" type="audio/wav">
+        Your browser does not support the audio element.
+    </audio>
     <script src="pong.js"></script>
 </body>
 </html> 

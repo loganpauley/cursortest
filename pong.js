@@ -2,6 +2,29 @@
 const canvas = document.getElementById('pongCanvas');
 const ctx = canvas.getContext('2d');
 
+// Audio elements
+const backgroundMusic = document.getElementById('backgroundMusic');
+const volumeSlider = document.getElementById('volumeSlider');
+const musicToggle = document.getElementById('musicToggle');
+let isMusicPlaying = false;
+
+// Music controls
+function toggleMusic() {
+    if (isMusicPlaying) {
+        backgroundMusic.pause();
+        musicToggle.innerHTML = '🔇 Music Off';
+    } else {
+        backgroundMusic.play().catch(e => console.log('Audio play failed:', e));
+        musicToggle.innerHTML = '🔊 Music On';
+    }
+    isMusicPlaying = !isMusicPlaying;
+}
+
+// Volume control
+volumeSlider.addEventListener('input', (e) => {
+    backgroundMusic.volume = e.target.value;
+});
+
 // Game objects
 const ball = {
     x: canvas.width / 2,
