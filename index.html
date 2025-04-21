@@ -6,66 +6,65 @@
     <title>Pong Game</title>
     <style>
         body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             background-color: #1a1a1a;
-            position: relative;
+            color: white;
+            font-family: Arial, sans-serif;
         }
         canvas {
             border: 2px solid white;
+            margin-bottom: 20px;
         }
-        #musicControls {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            color: white;
+        .controls {
             display: flex;
-            gap: 10px;
+            gap: 20px;
             align-items: center;
-            z-index: 1000;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 10px;
-            border-radius: 5px;
+            margin-bottom: 20px;
         }
         button {
-            background: #333;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #333;
             color: white;
             border: 1px solid white;
-            padding: 5px 10px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 16px;
+            border-radius: 5px;
         }
         button:hover {
-            background: #444;
+            background-color: #444;
         }
-        #volumeSlider {
-            width: 100px;
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         #bpmDisplay {
-            position: fixed;
-            top: 70px;
-            right: 20px;
-            color: white;
-            background-color: rgba(0, 0, 0, 0.5);
+            font-size: 18px;
+            font-weight: bold;
             padding: 10px;
+            background-color: #333;
             border-radius: 5px;
-            font-family: Arial, sans-serif;
+            min-width: 100px;
+            text-align: center;
         }
     </style>
 </head>
 <body>
-    <div id="musicControls">
-        <button id="musicToggle">🔇 Music Off</button>
-        <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5">
-    </div>
-    <div id="bpmDisplay">BPM: --</div>
     <canvas id="pongCanvas" width="800" height="400"></canvas>
-    <audio id="backgroundMusic" loop crossorigin="anonymous">
-        <source src="music.wav" type="audio/wav">
+    <div class="controls">
+        <button id="musicToggle">🔇 Music Off</button>
+        <div class="volume-control">
+            <label for="volumeSlider">Volume:</label>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5">
+        </div>
+        <div id="bpmDisplay">BPM: --</div>
+    </div>
+    <audio id="backgroundMusic" loop>
+        <source src="background-music.mp3" type="audio/mpeg">
         Your browser does not support the audio element.
     </audio>
     <script src="pong.js"></script>
