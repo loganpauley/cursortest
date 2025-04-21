@@ -10,16 +10,18 @@ const bpmDisplay = document.getElementById('bpmDisplay');
 let isMusicPlaying = false;
 
 // Audio context and BPM analyzer setup
-let audioContext;
-let analyzer;
-let source;
+let audioContext = null;
+let analyzer = null;
+let source = null;
 const baseBallSpeed = 5;
 let currentBPM = 120; // Default BPM
 
 // Initialize audio context and BPM analyzer
 async function initAudio() {
+    if (audioContext) return; // Don't initialize if already exists
+    
     try {
-        audioContext = new AudioContext();
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
         source = audioContext.createMediaElementSource(backgroundMusic);
         
         // Create analyzer node
@@ -40,14 +42,14 @@ async function initAudio() {
             // Simple peak detection
             let peaks = 0;
             let lastPeak = 0;
-            const threshold = 200; // Adjust this value based on your music
+            const threshold = 200;
             
             for (let i = 1; i < bufferLength - 1; i++) {
                 if (dataArray[i] > threshold && 
                     dataArray[i] > dataArray[i - 1] && 
                     dataArray[i] > dataArray[i + 1]) {
                     const timeSinceLastPeak = (Date.now() - lastPeak);
-                    if (timeSinceLastPeak > 200) { // Minimum 200ms between peaks
+                    if (timeSinceLastPeak > 200) {
                         peaks++;
                         lastPeak = Date.now();
                     }
@@ -77,22 +79,27 @@ async function initAudio() {
 
 // Music controls
 async function toggleMusic() {
-    if (!audioContext) {
-        await initAudio();
-    }
+    try {
+        // Initialize audio context on first click
+        if (!audioContext) {
+            await initAudio();
+        }
 
-    if (isMusicPlaying) {
-        backgroundMusic.pause();
-        musicToggle.textContent = '🔇 Music Off';
-        isMusicPlaying = false;
-    } else {
-        try {
+        if (isMusicPlaying) {
+            await backgroundMusic.pause();
+            musicToggle.textContent = '🔇 Music Off';
+            isMusicPlaying = false;
+        } else {
+            // Resume audio context if it's suspended
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
             await backgroundMusic.play();
             musicToggle.textContent = '🔊 Music On';
             isMusicPlaying = true;
-        } catch (error) {
-            console.error('Error playing music:', error);
         }
+    } catch (error) {
+        console.error('Error toggling music:', error);
     }
 }
 
