@@ -8,32 +8,47 @@ const volumeSlider = document.getElementById('volumeSlider');
 const musicToggle = document.getElementById('musicToggle');
 let isMusicPlaying = false;
 
+// Debug function
+function debugLog(message) {
+    console.log(`Debug: ${message}`);
+}
+
 // Music controls
 function toggleMusic() {
+    debugLog('Toggle music clicked');
+    debugLog(`Current music playing state: ${isMusicPlaying}`);
+    
     if (isMusicPlaying) {
+        debugLog('Attempting to pause music');
         backgroundMusic.pause();
-        musicToggle.innerHTML = '🔇 Music Off';
+        musicToggle.textContent = '🔇 Music Off';
+        isMusicPlaying = false;
     } else {
-        // Create a new promise to handle the play attempt
-        const playAttempt = backgroundMusic.play();
-        if (playAttempt !== undefined) {
-            playAttempt
+        debugLog('Attempting to play music');
+        try {
+            backgroundMusic.play()
                 .then(() => {
-                    musicToggle.innerHTML = '🔊 Music On';
+                    debugLog('Music started successfully');
+                    musicToggle.textContent = '🔊 Music On';
                     isMusicPlaying = true;
                 })
                 .catch(error => {
-                    console.log("Play failed:", error);
+                    debugLog(`Music play failed: ${error.message}`);
                     isMusicPlaying = false;
                 });
+        } catch (error) {
+            debugLog(`Error attempting to play: ${error.message}`);
         }
     }
-    isMusicPlaying = !isMusicPlaying;
 }
+
+// Add click event listener to music toggle button
+musicToggle.addEventListener('click', toggleMusic);
 
 // Volume control
 volumeSlider.addEventListener('input', (e) => {
     backgroundMusic.volume = e.target.value;
+    debugLog(`Volume changed to: ${e.target.value}`);
 });
 
 // Initialize volume
