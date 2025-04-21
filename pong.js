@@ -14,9 +14,14 @@ let audioContext = null;
 let analyzer = null;
 let source = null;
 const baseBallSpeed = 5;
-let currentBPM = 120; // Default BPM
-let energyBuffer = [];
-const energyBufferSize = 1024; // Store 2 seconds of energy data at 512Hz
+let currentBPM = 69; // Known BPM of the song
+let beatCount = 0;
+let lastBeatTime = 0;
+let lastEnergy = 0;
+let peakThreshold = 0;
+let valleys = 0;
+let peaks = 0;
+let timeWindow = 0;
 
 // Initialize audio context and BPM analyzer
 async function initAudio() {
@@ -28,8 +33,8 @@ async function initAudio() {
         
         source = audioContext.createMediaElementSource(backgroundMusic);
         analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = 1024;
-        analyzer.smoothingTimeConstant = 0.85;
+        analyzer.fftSize = 2048; // Higher resolution
+        analyzer.smoothingTimeConstant = 0.9; // Smoother analysis
         
         source.connect(analyzer);
         source.connect(audioContext.destination);
@@ -42,6 +47,8 @@ async function initAudio() {
         const bufferLength = analyzer.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         let lastUpdateTime = audioContext.currentTime;
+        let energyHistory = [];
+        const historySize = 60; // 1 second of history at 60fps
 
         function detectBPM() {
             if (!isMusicPlaying) {
@@ -51,101 +58,65 @@ async function initAudio() {
 
             analyzer.getByteFrequencyData(dataArray);
             
-            // Calculate energy focusing on bass and low-mid frequencies (20Hz - 200Hz)
+            // Focus on bass frequencies (approximately 20-120Hz)
             let energy = 0;
-            // Assuming 44.1kHz sample rate, each bin represents ~43Hz
-            // We'll look at bins 1-5 (approximately 43Hz-215Hz)
-            for (let i = 1; i < 5; i++) {
+            // With fftSize of 2048, each bin represents ~21.5Hz
+            // We'll look at bins 1-6 (approximately 21.5Hz-129Hz)
+            for (let i = 1; i < 6; i++) {
                 energy += dataArray[i];
             }
-            energy = energy / 4;
-
-            // Add energy to buffer
-            energyBuffer.push(energy);
-            if (energyBuffer.length > energyBufferSize) {
-                energyBuffer.shift();
+            energy = energy / 5;
+            
+            // Keep track of energy history
+            energyHistory.push(energy);
+            if (energyHistory.length > historySize) {
+                energyHistory.shift();
+                
+                // Calculate dynamic threshold
+                const sorted = [...energyHistory].sort((a, b) => a - b);
+                const median = sorted[Math.floor(sorted.length / 2)];
+                peakThreshold = median * 1.3; // 30% above median
             }
 
             const now = audioContext.currentTime;
-            const timeSinceUpdate = now - lastUpdateTime;
-
-            // Update BPM every 2 seconds
-            if (timeSinceUpdate >= 2.0 && energyBuffer.length === energyBufferSize) {
-                // Calculate BPM using autocorrelation
-                const bpm = calculateBPM(energyBuffer);
+            
+            // Detect beats using zero-crossing and peak detection
+            if (energy > peakThreshold && energy > lastEnergy && timeWindow > 0.2) {
+                beatCount++;
+                timeWindow = 0;
                 
-                if (bpm > 0) {
-                    // Smooth the BPM changes
-                    if (currentBPM === 120) {
-                        currentBPM = bpm;
-                    } else {
-                        currentBPM = Math.round(currentBPM * 0.7 + bpm * 0.3);
+                // Calculate instantaneous BPM
+                const timeSinceLastBeat = now - lastBeatTime;
+                if (timeSinceLastBeat > 0) {
+                    const instantBPM = Math.round(60 / timeSinceLastBeat);
+                    if (instantBPM >= 60 && instantBPM <= 200) { // Reasonable BPM range
+                        // Weighted average favoring the known BPM
+                        currentBPM = Math.round(currentBPM * 0.8 + instantBPM * 0.2);
+                        bpmDisplay.textContent = `BPM: ${currentBPM}`;
+                        updateBallSpeed();
+                        
+                        console.log('Beat detected:', {
+                            instantBPM,
+                            currentBPM,
+                            energy: Math.round(energy),
+                            threshold: Math.round(peakThreshold)
+                        });
                     }
-                    
-                    // Constrain BPM to reasonable range
-                    currentBPM = Math.max(60, Math.min(200, currentBPM));
-                    
-                    bpmDisplay.textContent = `BPM: ${currentBPM}`;
-                    updateBallSpeed();
-                    
-                    console.log('BPM Update:', {
-                        detectedBPM: bpm,
-                        currentBPM,
-                        timeSinceUpdate: timeSinceUpdate.toFixed(2)
-                    });
                 }
-                
-                lastUpdateTime = now;
+                lastBeatTime = now;
             }
+            
+            lastEnergy = energy;
+            timeWindow += 1/60; // Assuming 60fps
 
             requestAnimationFrame(detectBPM);
         }
 
-        // Start BPM detection
         detectBPM();
 
     } catch (error) {
         console.error('Error initializing audio:', error);
     }
-}
-
-// Calculate BPM using autocorrelation
-function calculateBPM(buffer) {
-    const correlation = new Float32Array(buffer.length);
-    
-    // Calculate autocorrelation
-    for (let lag = 0; lag < buffer.length; lag++) {
-        let sum = 0;
-        for (let i = 0; i < buffer.length - lag; i++) {
-            sum += buffer[i] * buffer[i + lag];
-        }
-        correlation[lag] = sum;
-    }
-    
-    // Find peaks in correlation
-    const peaks = [];
-    for (let i = 1; i < correlation.length - 1; i++) {
-        if (correlation[i] > correlation[i - 1] && correlation[i] > correlation[i + 1]) {
-            peaks.push({
-                position: i,
-                value: correlation[i]
-            });
-        }
-    }
-    
-    // Sort peaks by correlation value
-    peaks.sort((a, b) => b.value - a.value);
-    
-    // Find most prominent peak in the reasonable BPM range
-    // Assuming 512Hz sample rate, convert peak positions to BPM
-    for (const peak of peaks) {
-        const bpm = Math.round(60 * 512 / peak.position);
-        if (bpm >= 60 && bpm <= 200) {
-            return bpm;
-        }
-    }
-    
-    return 120; // Default BPM if no valid peak found
 }
 
 // Music controls
@@ -179,7 +150,8 @@ async function toggleMusic() {
                     await playPromise;
                     musicToggle.textContent = '🔊 Music On';
                     isMusicPlaying = true;
-                    energyBuffer = [];
+                    beatCount = 0;
+                    lastBeatTime = audioContext.currentTime;
                     console.log('Music started successfully');
                 }
             } catch (playError) {
